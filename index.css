@@ -1,0 +1,251 @@
+
+body {
+  font-family: 'Roboto', sans-serif;
+  margin: 0;
+  background-color: #f8f9fa;
+  color: #3c4043;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+#root {
+  width: 100%;
+  max-width: 1200px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.app-header {
+  text-align: center;
+  color: #1a73e8; /* Google Blue */
+  font-size: 28px;
+  font-weight: 500;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.controls-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background-color: #e8f0fe; /* Light Google Blue */
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  width: 100%;
+  max-width: 450px; /* Limit width of control groups */
+  justify-content: space-between;
+}
+
+.control-group label {
+  font-weight: 500;
+  color: #1967d2;
+  flex-shrink: 0;
+}
+
+.control-group input[type="range"] {
+  flex-grow: 1;
+  min-width: 150px;
+  cursor: pointer;
+}
+
+.control-group select {
+  flex-grow: 1;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #dadce0;
+  background-color: #fff;
+  font-size: 15px;
+  min-width: 180px;
+  cursor: pointer;
+}
+
+
+.control-group .slider-value {
+  font-weight: 700;
+  color: #1967d2;
+  min-width: 60px; /* Adjusted for "XX GPUs" */
+  text-align: right;
+}
+
+.models-comparison {
+  display: flex;
+  flex-direction: row;
+  gap: 24px;
+}
+
+.model-section {
+  flex: 1;
+  padding: 20px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  background-color: #fff;
+  box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+}
+
+.model-section h2 {
+  font-size: 20px;
+  font-weight: 500;
+  color: #3c4043;
+  margin-top: 0;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.chart-container {
+  width: 100%;
+  margin-bottom: 20px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  padding: 10px 0; 
+  box-sizing: border-box;
+}
+
+.chart-container svg {
+  display: block;
+  width: 100%;
+  height: auto; 
+  overflow: visible; 
+}
+
+.metrics-display {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.metric-item strong {
+  font-weight: 500;
+}
+
+.metric-item .value {
+  font-weight: 700;
+}
+
+.metrics-summary {
+  font-size: 13px;
+  color: #5f6368;
+  margin-top: 16px;
+  padding: 10px;
+  background-color: #f1f3f4;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+
+.metrics-summary ul {
+  padding-left: 20px;
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
+
+/* Color classes for metrics */
+.metric-reserved { background-color: #e8f0fe; color: #1967d2; } /* Light Blue */
+.metric-on-demand { background-color: #fff0e0; color: #e67c00; } /* Light Orange/Yellow */
+.metric-utilized { background-color: #e6f4ea; color: #188038; } /* Light Green */
+.metric-idle { background-color: #f1f3f4; color: #5f6368; } /* Light Gray */
+.metric-unmet { background-color: #fce8e6; color: #c5221f; } /* Light Red */
+
+
+/* Chart specific styles */
+.axis-line {
+  stroke: #80868b;
+  stroke-width: 1;
+}
+.axis-text {
+  font-family: 'Roboto', sans-serif;
+  font-size: 10px;
+  fill: #5f6368;
+}
+.grid-line {
+  stroke: #e0e0e0;
+  stroke-width: 0.5;
+  stroke-dasharray: 2,2;
+}
+
+/* Legend */
+.legend {
+  margin-top: 15px;
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+}
+.legend-color {
+  width: 12px;
+  height: 12px;
+  margin-right: 5px;
+  border-radius: 2px;
+}
+
+
+@media (max-width: 900px) {
+  .models-comparison {
+    flex-direction: column;
+  }
+  .control-group {
+    flex-direction: column;
+    align-items: stretch;
+     max-width: 100%;
+  }
+  .control-group input[type="range"], .control-group select {
+    width: 100%;
+  }
+  .control-group label {
+    margin-bottom: 5px;
+    text-align: center;
+  }
+   .control-group .slider-value {
+    text-align: center;
+    margin-top: 5px;
+  }
+}
+
+@media (max-width: 600px) {
+  #root {
+    padding: 16px;
+  }
+  .app-header {
+    font-size: 24px;
+  }
+  .model-section h2 {
+    font-size: 18px;
+  }
+  .metric-item {
+    font-size: 13px;
+  }
+}
