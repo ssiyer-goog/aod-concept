@@ -154,7 +154,7 @@ const SvgChart: React.FC<ChartProps> = ({ width, baseReservedCapacity, isAssured
       {idleReservedArea && baseReservedCapacity > 0 && <path d={idleReservedArea} fill="#E0E0E0" opacity="0.5" aria-label="Idle Reserved Capacity"/>}
       {utilizedReservedArea && baseReservedCapacity > 0 && <path d={utilizedReservedArea} fill={isAssuredModel ? "rgba(15, 157, 88, 0.3)" : "rgba(219, 68, 55, 0.3)"} aria-label="Utilized Reserved Capacity"/>}
       {isAssuredModel && utilizedOnDemandArea && <path d={utilizedOnDemandArea} fill="rgba(244, 180, 0, 0.4)" aria-label="Utilized On-Demand Capacity"/>}
-      {unmetDemandArea && <path d={unmetDemandArea} fill="rgba(234, 67, 53, 0.6)" aria-label="Unmet Demand"/>}
+      {unmetDemandArea && <path d={unmetDemandArea} fill="rgba(234, 67, 53, 0.6)" aria-label="Spot + Flex-start Demand"/>}
 
       {baseReservedCapacity > 0 && <line x1={CHART_PADDING_LEFT} y1={reservedLineY} x2={width-CHART_PADDING_RIGHT} y2={reservedLineY} stroke={isAssuredModel ? "#0F9D58" : "#DB4437"} strokeWidth="2" strokeDasharray="4,2" aria-label="Base Reserved Capacity Line"/>}
       {isAssuredModel && assuredCeilingCapacity > 0 && baseReservedCapacity > 0 && assuredCeilingCapacity > baseReservedCapacity && <line x1={CHART_PADDING_LEFT} y1={assuredLineY} x2={width-CHART_PADDING_RIGHT} y2={assuredLineY} stroke="#F4B400" strokeWidth="2" strokeDasharray="4,2" aria-label="Assured On-Demand Capacity Line"/>}
