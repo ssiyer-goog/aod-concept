@@ -1,370 +1,554 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-import React, { useState, useMemo } from 'react';
-import ReactDOM from 'react-dom/client';
-
-// Constants
-const TIME_POINTS = 24; // 24 hours
-const MAX_POSSIBLE_SLIDER_DEMAND = 40; // Max for Y-axis scaling & slider
-
-const DEMAND_PROFILES: Record<string, { name: string; data: number[] }> = {
-  typicalSpiky: {
-    name: "Typical Spiky",
-    data: [5, 6, 7, 8, 10, 13, 16, 20, 23, 26, 24, 20, 18, 15, 12, 14, 17, 21, 24, 22, 19, 15, 10, 7],
-  },
-  sustainedHigh: {
-    name: "Sustained High Usage",
-    data: [8, 9, 10, 12, 15, 18, 22, 25, 25, 25, 25, 24, 23, 22, 20, 18, 15, 12, 10, 9, 8, 7, 6, 5],
-  },
-  sharpShortPeak: {
-    name: "Sharp, Short Peak",
-    data: [4, 4, 5, 5, 6, 7, 8, 30, 35, 30, 8, 7, 6, 5, 5, 4, 4, 5, 6, 7, 6, 5, 4, 4],
-  },
-  dualPeaks: {
-    name: "Dual Peaks",
-    data: [5, 6, 8, 12, 18, 22, 18, 12, 8, 6, 7, 9, 15, 20, 25, 20, 15, 9, 7, 6, 5, 4, 4, 3],
-  },
-  lowFlat: {
-    name: "Low, Flat Usage",
-    data: [3, 3, 4, 4, 5, 5, 5, 6, 6, 6, 6, 5, 5, 4, 4, 3, 3, 3, 4, 4, 5, 5, 4, 3],
-  }
-};
-
-
-const CHART_HEIGHT = 250;
-const CHART_PADDING_TOP = 20;
-const CHART_PADDING_BOTTOM = 30;
-const CHART_PADDING_LEFT = 30;
-const CHART_PADDING_RIGHT = 10;
-const USABLE_CHART_HEIGHT = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
-
-interface ChartProps {
-  width: number;
-  baseReservedCapacity: number; // This is the actual base reservation line shown on the chart
-  isAssuredModel: boolean;
-  demandData: number[];
-  yAxisMax: number;
+interface LLMModel {
+    id: string;
+    name: string;
+    tokensPerSecondPerH100: number;
 }
 
-const SvgChart: React.FC<ChartProps> = ({ width, baseReservedCapacity, isAssuredModel, demandData, yAxisMax }) => {
-  const usableWidth = width - CHART_PADDING_LEFT - CHART_PADDING_RIGHT;
-  const xScale = usableWidth / (TIME_POINTS - 1);
-  const yScale = USABLE_CHART_HEIGHT / yAxisMax;
-
-  const getPath = (data: number[], fillToBottom: boolean = false, customMaxY?: number) => {
-    let path = `M ${CHART_PADDING_LEFT},${CHART_PADDING_TOP + USABLE_CHART_HEIGHT - Math.min(data[0], yAxisMax) * yScale}`;
-    data.forEach((point, i) => {
-      if (i > 0) {
-        path += ` L ${CHART_PADDING_LEFT + i * xScale},${CHART_PADDING_TOP + USABLE_CHART_HEIGHT - Math.min(point, customMaxY === undefined ? yAxisMax : customMaxY) * yScale}`;
-      }
-    });
-    if (fillToBottom) {
-      path += ` L ${CHART_PADDING_LEFT + (TIME_POINTS - 1) * xScale},${CHART_PADDING_TOP + USABLE_CHART_HEIGHT}`;
-      path += ` L ${CHART_PADDING_LEFT},${CHART_PADDING_TOP + USABLE_CHART_HEIGHT} Z`;
-    }
-    return path;
-  };
-  
-  const getAreaPath = (lowerDataPoints: number[], upperDataPoints: number[]) => {
-    let path = `M ${CHART_PADDING_LEFT},${CHART_PADDING_TOP + USABLE_CHART_HEIGHT - Math.min(lowerDataPoints[0], yAxisMax) * yScale}`;
-    lowerDataPoints.forEach((point, i) => {
-        if (i > 0) path += ` L ${CHART_PADDING_LEFT + i * xScale},${CHART_PADDING_TOP + USABLE_CHART_HEIGHT - Math.min(point, yAxisMax) * yScale}`;
-    });
-    for (let i = upperDataPoints.length - 1; i >= 0; i--) {
-        path += ` L ${CHART_PADDING_LEFT + i * xScale},${CHART_PADDING_TOP + USABLE_CHART_HEIGHT - Math.min(upperDataPoints[i], yAxisMax) * yScale}`;
-    }
-    path += " Z";
-    return path;
-  };
-
-  const demandPath = getPath(demandData);
-  const reservedLineY = CHART_PADDING_TOP + USABLE_CHART_HEIGHT - Math.min(baseReservedCapacity, yAxisMax) * yScale;
-  
-  const assuredCeilingCapacity = isAssuredModel ? baseReservedCapacity * 1.25 : baseReservedCapacity;
-  const assuredLineY = CHART_PADDING_TOP + USABLE_CHART_HEIGHT - Math.min(assuredCeilingCapacity, yAxisMax) * yScale;
-
-
-  const utilizedReservedPoints = demandData.map(d => Math.min(d, baseReservedCapacity));
-  const utilizedReservedArea = getAreaPath(Array(TIME_POINTS).fill(0), utilizedReservedPoints);
-  
-  const idleReservedAreaPointsBase = demandData.map(d => Math.min(d, baseReservedCapacity));
-  const idleReservedAreaPointsTop = Array(TIME_POINTS).fill(baseReservedCapacity);
-  const idleReservedArea = getAreaPath(idleReservedAreaPointsBase, idleReservedAreaPointsTop);
-
-
-  let unmetDemandArea = "";
-  const unmetPoints = demandData.map(d => Math.max(0, d - assuredCeilingCapacity));
-  const unmetBase = demandData.map(d => Math.min(d, assuredCeilingCapacity));
-  if (unmetPoints.some(p => p > 0)) {
-    unmetDemandArea = getAreaPath(unmetBase, demandData);
-  }
-  
-  let utilizedOnDemandArea = "";
-  if (isAssuredModel) {
-      const onDemandStartPoints = demandData.map(d => Math.min(d, baseReservedCapacity)); 
-      const onDemandEndPoints = demandData.map(d => Math.min(d, assuredCeilingCapacity)); 
-      if (demandData.some((d, i) => onDemandEndPoints[i] > onDemandStartPoints[i])) {
-        utilizedOnDemandArea = getAreaPath(onDemandStartPoints, onDemandEndPoints);
-      }
-  }
-
-  const yAxisTicks = [];
-  for (let i = 0; i <= yAxisMax; i += 5) {
-      yAxisTicks.push(i);
-  }
-
-  return (
-    <svg viewBox={`0 0 ${width} ${CHART_HEIGHT}`} aria-labelledby={isAssuredModel ? "assuredChartTitle" : "traditionalChartTitle"} role="img">
-      <title id={isAssuredModel ? "assuredChartTitle" : "traditionalChartTitle"}>
-        GPU Usage Over Time ({isAssuredModel ? "Assured On-Demand Model" : "Traditional Model"})
-      </title>
-      {yAxisTicks.map(tick => (
-        <g key={`y-tick-${tick}`}>
-          <line
-            className="grid-line"
-            x1={CHART_PADDING_LEFT}
-            y1={CHART_PADDING_TOP + USABLE_CHART_HEIGHT - tick * yScale}
-            x2={width - CHART_PADDING_RIGHT}
-            y2={CHART_PADDING_TOP + USABLE_CHART_HEIGHT - tick * yScale}
-          />
-          <text
-            className="axis-text"
-            x={CHART_PADDING_LEFT - 8}
-            y={CHART_PADDING_TOP + USABLE_CHART_HEIGHT - tick * yScale + 3}
-            textAnchor="end"
-          >
-            {tick}
-          </text>
-        </g>
-      ))}
-       <line className="axis-line" x1={CHART_PADDING_LEFT} y1={CHART_PADDING_TOP + USABLE_CHART_HEIGHT} x2={width - CHART_PADDING_RIGHT} y2={CHART_PADDING_TOP + USABLE_CHART_HEIGHT} />
-      {[0, 6, 12, 18, 23].map(hour => (
-        <text
-          key={`x-label-${hour}`}
-          className="axis-text"
-          x={CHART_PADDING_LEFT + hour * xScale}
-          y={CHART_PADDING_TOP + USABLE_CHART_HEIGHT + 15}
-          textAnchor="middle"
-        >
-          {hour}h
-        </text>
-      ))}
-       <text className="axis-text" x={CHART_PADDING_LEFT + (TIME_POINTS -1) * xScale / 2} y={CHART_PADDING_TOP + USABLE_CHART_HEIGHT + 28} textAnchor="middle">Time (Hours)</text>
-       <text className="axis-text" x={CHART_PADDING_LEFT - 25} y={CHART_PADDING_TOP + USABLE_CHART_HEIGHT/2} textAnchor="middle" transform={`rotate(-90, ${CHART_PADDING_LEFT - 25}, ${CHART_PADDING_TOP + USABLE_CHART_HEIGHT/2})`}>GPU Units</text>
-
-      {idleReservedArea && baseReservedCapacity > 0 && <path d={idleReservedArea} fill="#E0E0E0" opacity="0.5" aria-label="Idle Reserved Capacity"/>}
-      {utilizedReservedArea && baseReservedCapacity > 0 && <path d={utilizedReservedArea} fill={isAssuredModel ? "rgba(15, 157, 88, 0.3)" : "rgba(219, 68, 55, 0.3)"} aria-label="Utilized Reserved Capacity"/>}
-      {isAssuredModel && utilizedOnDemandArea && <path d={utilizedOnDemandArea} fill="rgba(244, 180, 0, 0.4)" aria-label="Utilized On-Demand Capacity"/>}
-      {unmetDemandArea && <path d={unmetDemandArea} fill="rgba(234, 67, 53, 0.6)" aria-label="Spot + Flex-start Demand"/>}
-
-      {baseReservedCapacity > 0 && <line x1={CHART_PADDING_LEFT} y1={reservedLineY} x2={width-CHART_PADDING_RIGHT} y2={reservedLineY} stroke={isAssuredModel ? "#0F9D58" : "#DB4437"} strokeWidth="2" strokeDasharray="4,2" aria-label="Base Reserved Capacity Line"/>}
-      {isAssuredModel && assuredCeilingCapacity > 0 && baseReservedCapacity > 0 && assuredCeilingCapacity > baseReservedCapacity && <line x1={CHART_PADDING_LEFT} y1={assuredLineY} x2={width-CHART_PADDING_RIGHT} y2={assuredLineY} stroke="#F4B400" strokeWidth="2" strokeDasharray="4,2" aria-label="Assured On-Demand Capacity Line"/>}
-      <path d={demandPath} stroke="#4285F4" strokeWidth="2.5" fill="none" aria-label="GPU Demand Line"/>
-
-    </svg>
-  );
-};
-
-
-interface Metrics {
-  committedReservedGpuHours: number;
-  utilizedBaseReservedGpuHours: number;
-  utilizedOnDemandGpuHours: number;
-  totalUtilizedGpuHours: number;
-  idleBaseReservedGpuHours: number;
-  unmetDemandGpuHours: number;
+interface DiurnalPatternOption {
+    id: string;
+    name: string;
+    pattern: number[];
 }
 
-function calculateMetrics(
-  inputBaseReservationAmount: number, 
-  isAssuredModel: boolean,
-  demandProfile: number[]
-): Metrics {
-  const hoursInProfile = demandProfile.length;
-  let committedReservedGpuHours = inputBaseReservationAmount * hoursInProfile;
+interface HourlyBreakdown {
+    totalDemand: number;
+    reserved: number;
+    fallback: number;
+    flexSpot: number;
+}
 
-  let utilizedBaseReservedGpuHours = 0;
-  let utilizedOnDemandGpuHours = 0;
-  let idleBaseReservedGpuHours = 0;
-  let unmetDemandGpuHours = 0;
+interface InitialEstimationResults {
+    peakGpus: number;
+    hourlyGpuDemand: number[];
+    modelName: string;
+}
 
-  const onDemandCeiling = isAssuredModel ? inputBaseReservationAmount * 1.25 : inputBaseReservationAmount;
+const llmModels: LLMModel[] = [
+    { id: 'llama-3-70b', name: 'Llama-3-70B Instruct', tokensPerSecondPerH100: 1500 },
+    { id: 'mixtral-8x7b', name: 'Mixtral-8x7B Instruct', tokensPerSecondPerH100: 1200 },
+    { id: 'falcon-180b', name: 'Falcon-180B Chat', tokensPerSecondPerH100: 800 },
+    { id: 'gemma-7b', name: 'Gemma-7B Instruct', tokensPerSecondPerH100: 3000 },
+    { id: 'claude-3-opus-hypo', name: 'Claude 3 Opus (Hypothetical H100)', tokensPerSecondPerH100: 1000 },
+    { id: 'gpt-4-base-hypo', name: 'GPT-4 Base (Hypothetical H100)', tokensPerSecondPerH100: 900 },
+];
 
-  demandProfile.forEach(demand => {
-    if (inputBaseReservationAmount <= 0) { 
-        unmetDemandGpuHours += demand;
+const diurnalPatternsOptions: DiurnalPatternOption[] = [
+    {
+        id: 'office-hours',
+        name: 'Standard Office Hours (9am-5pm Peak)',
+        pattern: [0.1, 0.1, 0.1, 0.1, 0.15, 0.25, 0.5, 0.75, 0.95, 1.0, 0.95, 0.8, 0.6, 0.4, 0.3, 0.2, 0.15, 0.15, 0.2, 0.3, 0.4, 0.3, 0.2, 0.15]
+    },
+    {
+        id: 'global-flat',
+        name: 'Global 24/7 (Flatter Distribution)',
+        pattern: [0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.6, 0.65, 0.7, 0.7, 0.65, 0.6]
+    },
+    {
+        id: 'evening-peak',
+        name: 'Evening Peak (B2C/Entertainment)',
+        pattern: [0.2, 0.15, 0.1, 0.1, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.95, 0.8, 0.6, 0.4, 0.3, 0.25]
+    },
+    {
+        id: 'dual-peak',
+        name: 'Dual Peak (Commute + Evening)',
+        pattern: [0.2, 0.15, 0.1, 0.1, 0.3, 0.6, 0.8, 0.9, 0.7, 0.5, 0.4, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.7, 0.5, 0.3, 0.25, 0.2]
+    }
+];
+
+const DEFAULT_RESERVED_GPUS = 10;
+const DEFAULT_PRICE_RESERVED = 2.50;
+const DEFAULT_PRICE_FALLBACK = 3.00;
+const DEFAULT_PRICE_FLEXSPOT = 3.50;
+
+const CHART_COLORS = {
+    totalDemand: 'rgba(26, 115, 232, 1)', 
+    reserved: 'rgba(52, 168, 83, 0.7)',
+    fallback: 'rgba(251, 188, 5, 0.7)',
+    flexSpot: 'rgba(234, 67, 53, 0.7)',
+    grid: '#dadce0',
+    text: '#5f6368'
+};
+
+let currentPeakEstimation: { peakGpus: number; hourlyGpuDemand: number[]; modelName: string; } | null = null;
+let peakDemandCalculatedSuccessfully = false;
+
+
+function populateModelDropdown(): void {
+    const selectElement = document.getElementById('llmModel') as HTMLSelectElement;
+    if (!selectElement) return;
+    llmModels.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = `${model.name} (~${model.tokensPerSecondPerH100} Tok/s/GPU)`;
+        selectElement.appendChild(option);
+    });
+}
+
+function populateDiurnalPatternDropdown(): void {
+    const selectElement = document.getElementById('diurnalPatternSelect') as HTMLSelectElement;
+    if (!selectElement) return;
+    diurnalPatternsOptions.forEach(patternOpt => {
+        const option = document.createElement('option');
+        option.value = patternOpt.id;
+        option.textContent = patternOpt.name;
+        selectElement.appendChild(option);
+    });
+    if (diurnalPatternsOptions.length > 0) {
+        selectElement.value = diurnalPatternsOptions[0].id;
+    }
+}
+
+function calculateInitialGPUNeeds(
+    modelId: string,
+    peakConcurrentUsers: number,
+    avgRequestsPerUserPeakHour: number,
+    avgTokensPerRequest: number,
+    activeDiurnalPattern: number[]
+): { peakGpus: number; hourlyGpuDemand: number[] } | null {
+    const selectedModel = llmModels.find(m => m.id === modelId);
+    if (!selectedModel) return null;
+    if (peakConcurrentUsers <= 0 || avgRequestsPerUserPeakHour <= 0 || avgTokensPerRequest <= 0) return null;
+
+    const modelTPSPerGPU = selectedModel.tokensPerSecondPerH100;
+    const totalPeakRequestsDuringPeakHour = peakConcurrentUsers * avgRequestsPerUserPeakHour;
+    const peakRequestsPerSecond = totalPeakRequestsDuringPeakHour / 3600;
+    const totalPeakTokensPerSecond = peakRequestsPerSecond * avgTokensPerRequest;
+    const peakGpus = Math.ceil(totalPeakTokensPerSecond / modelTPSPerGPU);
+    const hourlyGpuDemand = activeDiurnalPattern.map(multiplier => Math.ceil(peakGpus * multiplier));
+    return { peakGpus, hourlyGpuDemand };
+}
+
+function calculateConsumptionBreakdown(hourlyGpuDemand: number[], reservedGpus: number): HourlyBreakdown[] {
+    const fallbackOnDemandCapacity = reservedGpus * 0.5; 
+
+    return hourlyGpuDemand.map(demand => {
+        let currentDemand = demand;
+        
+        const gpusFromReservation = Math.min(currentDemand, reservedGpus);
+        currentDemand -= gpusFromReservation;
+
+        const gpusFromFallback = Math.min(currentDemand, fallbackOnDemandCapacity);
+        currentDemand -= gpusFromFallback;
+
+        const gpusFromFlexSpot = currentDemand;
+
+        return {
+            totalDemand: demand,
+            reserved: gpusFromReservation,
+            fallback: gpusFromFallback,
+            flexSpot: gpusFromFlexSpot,
+        };
+    });
+}
+
+
+function displayResultsSummary(peakGpus: number | null, modelName: string | null, error?: string): void {
+    const resultsDisplay = document.getElementById('resultsDisplay');
+    if (!resultsDisplay) return;
+
+    if (error) {
+        resultsDisplay.innerHTML = `<p class="error-message">${error}</p>`;
+        return;
+    }
+    
+    if (peakGpus === null || modelName === null) {
+         resultsDisplay.innerHTML = `<p>Configure workload details and click "Calculate Peak Demand".</p>`;
         return;
     }
 
-    if (demand <= inputBaseReservationAmount) {
-      utilizedBaseReservedGpuHours += demand;
-      idleBaseReservedGpuHours += (inputBaseReservationAmount - demand);
-    } else if (demand <= onDemandCeiling) {
-      utilizedBaseReservedGpuHours += inputBaseReservationAmount; 
-      if (isAssuredModel) {
-        utilizedOnDemandGpuHours += (demand - inputBaseReservationAmount);
-      } else {
-        unmetDemandGpuHours += (demand - inputBaseReservationAmount);
-      }
-    } else {
-      utilizedBaseReservedGpuHours += inputBaseReservationAmount; 
-      if (isAssuredModel) {
-        utilizedOnDemandGpuHours += (onDemandCeiling - inputBaseReservationAmount);
-      }
-      unmetDemandGpuHours += (demand - onDemandCeiling);
+     resultsDisplay.innerHTML = `
+        <p>For <strong>${modelName}</strong>, your workload has an estimated peak demand of:</p>
+        <p><strong aria-live="assertive">${peakGpus} H100 GPU(s)</strong>.</p>
+    `;
+    if (peakGpus <= 0) {
+         resultsDisplay.innerHTML = `
+            <p>For <strong>${modelName}</strong>, the estimated load is very low or zero.</p>
+            <p><strong aria-live="assertive">Peak demand: ${peakGpus} H100 GPU(s)</strong>.</p>
+            <p>Review inputs if this is unexpected.</p>
+        `;
     }
-  });
+}
 
-  const totalUtilizedGpuHours = utilizedBaseReservedGpuHours + utilizedOnDemandGpuHours;
+function displayAnalysis(
+    hourlyBreakdowns: HourlyBreakdown[] | null,
+    reservedGpusConfig: number,
+    peakTotalDemand: number | null,
+    prices: { reserved: number; fallback: number; flexSpot: number } | null,
+    error?: string
+): void {
+    const analysisDisplay = document.getElementById('analysisDisplay');
+    if (!analysisDisplay) return;
 
-  return {
-    committedReservedGpuHours,
-    utilizedBaseReservedGpuHours,
-    utilizedOnDemandGpuHours,
-    totalUtilizedGpuHours,
-    idleBaseReservedGpuHours,
-    unmetDemandGpuHours,
-  };
+    if (error) {
+        analysisDisplay.innerHTML = `<p class="error-message">${error}</p>`;
+        return;
+    }
+
+    if (!peakDemandCalculatedSuccessfully || !hourlyBreakdowns || peakTotalDemand === null || !prices) {
+        analysisDisplay.innerHTML = `<p class="placeholder-text">Configure capacity details and click 'Analyze Capacity & Costs'.</p>`;
+        return;
+    }
+
+
+    let totalReservedUsed = 0;
+    let totalFallbackUsed = 0;
+    let totalFlexSpotUsed = 0;
+
+    hourlyBreakdowns.forEach(hour => {
+        totalReservedUsed += hour.reserved;
+        totalFallbackUsed += hour.fallback;
+        totalFlexSpotUsed += hour.flexSpot;
+    });
+
+    const totalReservedPaidHours = reservedGpusConfig * 24;
+    const totalIdleReservedHours = Math.max(0, totalReservedPaidHours - totalReservedUsed);
+
+    const costAllReservedPeak = peakTotalDemand * 24 * prices.reserved;
+    const costMixedModel = (totalReservedPaidHours * prices.reserved) +
+                           (totalFallbackUsed * prices.fallback) +
+                           (totalFlexSpotUsed * prices.flexSpot);
+    const savings = costAllReservedPeak - costMixedModel;
+    const anyPriceSet = prices.reserved > 0 || prices.fallback > 0 || prices.flexSpot > 0;
+
+    analysisDisplay.innerHTML = `
+        <h4>GPU Hours Breakdown (24h):</h4>
+        <ul>
+            <li>Reserved GPUs (Utilized): <strong aria-label="Reserved GPUs Utilized">${totalReservedUsed.toLocaleString()} GPU-hours</strong></li>
+            <li>Reserved GPUs (Idle): <strong aria-label="Reserved GPUs Idle">${totalIdleReservedHours.toLocaleString()} GPU-hours</strong></li>
+            <li>Fallback On-Demand GPUs (Utilized): <strong aria-label="Fallback On-Demand GPUs Utilized">${totalFallbackUsed.toLocaleString()} GPU-hours</strong></li>
+            <li>Flex-start GPUs (Utilized): <strong aria-label="Flex-start GPUs Utilized">${totalFlexSpotUsed.toLocaleString()} GPU-hours</strong></li>
+        </ul>
+        <h4>Cost Comparison (24h Estimate):</h4>
+        <div class="cost-comparison-container">
+            <div class="cost-column">
+                <p class="cost-label">Scenario 1: 100% Reservation for Peak</p>
+                <p class="cost-value">${anyPriceSet && prices.reserved > 0 ? '$' + costAllReservedPeak.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'N/A'}</p>
+            </div>
+            <div class="cost-column">
+                <p class="cost-label">Scenario 2: Reservation + Fallback + Flex-start</p>
+                <p class="cost-value">${anyPriceSet ? '$' + costMixedModel.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'N/A'}</p>
+            </div>
+        </div>
+        <div class="savings-summary">
+            Potential Savings (Scenario 2 vs 1): 
+            <strong class="${savings >= 0 ? 'savings' : 'loss'}" aria-label="Potential savings">
+                ${anyPriceSet ? '$' + savings.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : 'N/A (Set Prices)'}
+            </strong>
+        </div>
+    `;
 }
 
 
-const App: React.FC = () => {
-  const [targetPeakDemand, setTargetPeakDemand] = useState<number>(25);
-  const [selectedProfileKey, setSelectedProfileKey] = useState<string>(Object.keys(DEMAND_PROFILES)[0]);
-  const [chartWidth, setChartWidth] = useState(500);
+function drawDiurnalChart(
+    hourlyBreakdowns: HourlyBreakdown[] | null, 
+    peakDemandValue: number | null, 
+    showOnlyTotalDemandLine: boolean = false
+): void {
+    const canvas = document.getElementById('diurnalChart') as HTMLCanvasElement;
+    const legendDiv = document.getElementById('chartLegend');
+    const chartPlaceholder = document.getElementById('chartPlaceholder');
 
-  const currentDemandData = useMemo(() => DEMAND_PROFILES[selectedProfileKey].data, [selectedProfileKey]);
+    if (!canvas || !legendDiv || !chartPlaceholder) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-  const traditionalBaseReservation = targetPeakDemand;
-  const assuredBaseReservation = targetPeakDemand > 0 ? targetPeakDemand / 1.25 : 0;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    
+    const chartWidth = canvas.clientWidth; 
+    const chartHeight = canvas.clientHeight;
+    const padding = 50;
+
+    ctx.clearRect(0, 0, chartWidth, chartHeight);
+    legendDiv.innerHTML = '';
+    chartPlaceholder.style.display = 'none';
 
 
-  const traditionalMetrics = useMemo(
-    () => calculateMetrics(traditionalBaseReservation, false, currentDemandData),
-    [traditionalBaseReservation, currentDemandData]
-  );
-  const assuredMetrics = useMemo(
-    () => calculateMetrics(assuredBaseReservation, true, currentDemandData),
-    [assuredBaseReservation, currentDemandData]
-  );
+    if (!peakDemandCalculatedSuccessfully || peakDemandValue === null || peakDemandValue < 0 || (!hourlyBreakdowns && !showOnlyTotalDemandLine)) {
+        chartPlaceholder.style.display = 'block';
+        chartPlaceholder.textContent = peakDemandCalculatedSuccessfully ? "Configure capacity and click 'Analyze Capacity & Costs' to see full chart." : "Chart will appear after calculations.";
+        return;
+    }
+    
+    ctx.lineWidth = 1;
+    ctx.font = '11px Roboto, Noto Sans, sans-serif';
 
-  React.useEffect(() => {
-    const handleResize = () => {
-      const container = document.querySelector('.model-section .chart-container');
-      if (container) {
-        setChartWidth(container.clientWidth);
-      }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-  
-  const actualPeakDemandInCurve = Math.max(...currentDemandData); 
+    const maxVal = Math.max(peakDemandValue, 5); 
+    const numDataPoints = showOnlyTotalDemandLine && currentPeakEstimation ? currentPeakEstimation.hourlyGpuDemand.length : (hourlyBreakdowns ? hourlyBreakdowns.length : 0);
+    if(numDataPoints === 0) {
+        chartPlaceholder.style.display = 'block';
+        chartPlaceholder.textContent = "Not enough data to draw chart.";
+        return;
+    }
 
-  return (
-    <div className="app-container">
-      <header className="app-header">Assured On-Demand for Inference Demo</header>
-      
-      <section className="controls-panel" aria-labelledby="controls-heading">
-        <h2 id="controls-heading" className="visually-hidden">Simulation Controls</h2>
-        <div className="control-group">
-          <label htmlFor="demand-profile-select">Demand Profile Shape:</label>
-          <select 
-            id="demand-profile-select" 
-            value={selectedProfileKey} 
-            onChange={(e) => setSelectedProfileKey(e.target.value)}
-            aria-label="Select demand profile shape"
-          >
-            {Object.keys(DEMAND_PROFILES).map(key => (
-              <option key={key} value={key}>{DEMAND_PROFILES[key].name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="control-group">
-          <label htmlFor="target-peak-demand-slider">Target Peak GPU Demand to Cover:</label>
-          <input
-            type="range"
-            id="target-peak-demand-slider"
-            min="0"
-            max={MAX_POSSIBLE_SLIDER_DEMAND}
-            value={targetPeakDemand}
-            onChange={(e) => setTargetPeakDemand(parseInt(e.target.value, 10))}
-            aria-valuemin={0}
-            aria-valuemax={MAX_POSSIBLE_SLIDER_DEMAND}
-            aria-valuenow={targetPeakDemand}
-            aria-label="Set target peak GPU demand to cover"
-          />
-          <span className="slider-value" aria-live="polite">{targetPeakDemand} GPUs</span>
-        </div>
-      </section>
 
-      <div className="models-comparison">
-        <section className="model-section" aria-labelledby="traditional-model-heading">
-          <h2 id="traditional-model-heading">Traditional Reservation Model</h2>
-          <div className="chart-container">
-            {chartWidth > 0 && <SvgChart width={chartWidth} baseReservedCapacity={traditionalBaseReservation} isAssuredModel={false} demandData={currentDemandData} yAxisMax={MAX_POSSIBLE_SLIDER_DEMAND}/>}
-          </div>
-          <div className="metrics-display">
-            <div className="metric-item metric-reserved"><strong>Reserved GPU Hours:</strong> <span className="value">{traditionalMetrics.committedReservedGpuHours.toFixed(0)}</span></div>
-            <div className="metric-item metric-utilized"><strong>Utilized (Base) GPU Hours:</strong> <span className="value">{traditionalMetrics.utilizedBaseReservedGpuHours.toFixed(0)}</span></div>
-            <div className="metric-item metric-idle"><strong>Idle Reserved GPU Hours:</strong> <span className="value">{traditionalMetrics.idleBaseReservedGpuHours.toFixed(0)}</span></div>
-            <div className="metric-item metric-unmet"><strong>Unmet Demand GPU Hours:</strong> <span className="value">{traditionalMetrics.unmetDemandGpuHours.toFixed(0)}</span></div>
-          </div>
-           <div className="metrics-summary">
-            To cover a chosen peak of {targetPeakDemand} GPUs, this model reserves all {targetPeakDemand} GPUs.
-            <ul>
-              <li>Total Reserved: {traditionalMetrics.committedReservedGpuHours.toFixed(0)} GPU hrs.</li>
-              <li>Idle: {traditionalMetrics.idleBaseReservedGpuHours.toFixed(0)} GPU hrs.</li>
-              <li>Unmet: {traditionalMetrics.unmetDemandGpuHours.toFixed(0)} GPU hrs.</li>
-            </ul>
-          </div>
-        </section>
+    const stepX = (chartWidth - 2 * padding) / (numDataPoints > 1 ? numDataPoints - 1 : 1);
+    const stepY = (maxVal > 0) ? (chartHeight - 2 * padding) / maxVal : (chartHeight - 2 * padding);
 
-        <section className="model-section" aria-labelledby="assured-model-heading">
-          <h2 id="assured-model-heading">Assured On-Demand Model</h2>
-          <div className="chart-container">
-             {chartWidth > 0 && <SvgChart width={chartWidth} baseReservedCapacity={assuredBaseReservation} isAssuredModel={true} demandData={currentDemandData} yAxisMax={MAX_POSSIBLE_SLIDER_DEMAND}/>}
-          </div>
-          <div className="metrics-display">
-            <div className="metric-item metric-reserved"><strong>Base Reserved GPU Hours (r):</strong> <span className="value">{assuredMetrics.committedReservedGpuHours.toFixed(0)}</span></div>
-            <div className="metric-item metric-on-demand"><strong>On-Demand GPU Hours Used (+25%):</strong> <span className="value">{assuredMetrics.utilizedOnDemandGpuHours.toFixed(0)}</span></div>
-            <div className="metric-item metric-utilized"><strong>Total Utilized GPU Hours:</strong> <span className="value">{assuredMetrics.totalUtilizedGpuHours.toFixed(0)}</span></div>
-            <div className="metric-item metric-idle"><strong>Idle Base Reserved GPU Hours:</strong> <span className="value">{assuredMetrics.idleBaseReservedGpuHours.toFixed(0)}</span></div>
-            <div className="metric-item metric-unmet"><strong>Unmet Demand GPU Hours:</strong> <span className="value">{assuredMetrics.unmetDemandGpuHours.toFixed(0)}</span></div>
-          </div>
-          <div className="metrics-summary">
-            To cover a chosen peak of {targetPeakDemand} GPUs:
-            <ul>
-              <li>Base reservation (r): <strong>{assuredBaseReservation.toFixed(1)} GPUs</strong>.</li>
-              <li>Assured On-Demand (up to +25% of r): {(assuredBaseReservation * 0.25).toFixed(1)} GPUs.</li>
-              <li>Total effective coverage: <strong>{targetPeakDemand > 0 ? (assuredBaseReservation * 1.25).toFixed(1) : "0.0"} GPUs</strong>.</li>
-              <li>Idle Base: {assuredMetrics.idleBaseReservedGpuHours.toFixed(0)} GPU hrs.</li>
-              <li>Unmet: {assuredMetrics.unmetDemandGpuHours.toFixed(0)} GPU hrs.</li>
-            </ul>
-          </div>
-        </section>
-      </div>
-      <div className="legend">
-        <div className="legend-item"><span className="legend-color" style={{backgroundColor: '#4285F4'}}></span>Demand</div>
-        <div className="legend-item"><span className="legend-color" style={{backgroundColor: 'rgba(219, 68, 55, 0.3)'}}></span>Traditional Utilized</div>
-        <div className="legend-item"><span className="legend-color" style={{backgroundColor: 'rgba(15, 157, 88, 0.3)'}}></span>Assured Base Utilized</div>
-        <div className="legend-item"><span className="legend-color" style={{backgroundColor: 'rgba(244, 180, 0, 0.4)'}}></span>Assured On-Demand Utilized</div>
-        <div className="legend-item"><span className="legend-color" style={{backgroundColor: 'rgba(234, 67, 53, 0.6)'}}></span>Unmet Demand</div>
-        <div className="legend-item"><span className="legend-color" style={{backgroundColor: '#E0E0E0'}}></span>Idle Reserved</div>
-      </div>
-      <p className="visually-hidden" id="svg-chart-description">
-        The charts display GPU usage over 24 hours. The blue line represents actual GPU demand.
-        In the Traditional model, a dashed red line shows the fixed reservation.
-        In the Assured On-Demand model, a dashed green line shows the base reservation, and a dashed yellow line shows the additional 25% assured capacity ceiling.
-        Colored areas indicate utilized capacity, idle capacity, and unmet demand.
-      </p>
-      <style>{`.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }`}</style>
-    </div>
-  );
-};
+    // Y-axis and Gridlines
+    ctx.beginPath();
+    ctx.moveTo(padding, padding);
+    ctx.lineTo(padding, chartHeight - padding);
+    ctx.strokeStyle = CHART_COLORS.grid;
+    ctx.stroke();
 
-const rootElement = document.getElementById('root');
-if (rootElement) {
-  const root = ReactDOM.createRoot(rootElement);
-  root.render(<React.StrictMode><App /></React.StrictMode>);
+    const numYLabels = 5;
+    for (let i = 0; i <= numYLabels; i++) {
+        const val = Math.ceil((maxVal / numYLabels) * i);
+        const y = chartHeight - padding - (val * stepY);
+        ctx.fillStyle = CHART_COLORS.text;
+        ctx.textAlign = 'right';
+        ctx.fillText(String(val), padding - 8, y + 4); 
+        if (i > 0) { 
+            ctx.beginPath();
+            ctx.moveTo(padding, y);
+            ctx.lineTo(chartWidth - padding, y);
+            ctx.strokeStyle = CHART_COLORS.grid;
+            ctx.stroke();
+        }
+    }
+    ctx.fillStyle = CHART_COLORS.text;
+    ctx.save();
+    ctx.translate(padding / 3 - 5, chartHeight / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.font = '12px Roboto, Noto Sans, sans-serif';
+    ctx.fillText('Est. GPUs', 0, 0); 
+    ctx.restore();
+
+    // X-axis
+    ctx.beginPath();
+    ctx.moveTo(padding, chartHeight - padding);
+    ctx.lineTo(chartWidth - padding, chartHeight - padding);
+    ctx.strokeStyle = CHART_COLORS.grid;
+    ctx.stroke();
+
+    for (let i = 0; i < numDataPoints; i++) { 
+        const x = padding + i * stepX;
+        if (i % 2 === 0) { 
+            ctx.fillStyle = CHART_COLORS.text;
+            ctx.textAlign = 'center';
+            ctx.fillText(String(i).padStart(2, '0'), x, chartHeight - padding + 18);
+        }
+    }
+    ctx.fillStyle = CHART_COLORS.text;
+    ctx.textAlign = 'center';
+    ctx.font = '12px Roboto, Noto Sans, sans-serif';
+    ctx.fillText('Hour of Day', chartWidth / 2, chartHeight - padding + 35);
+
+    // Drawing areas/lines
+    const totalDemandHourlyData = showOnlyTotalDemandLine && currentPeakEstimation ? currentPeakEstimation.hourlyGpuDemand : (hourlyBreakdowns ? hourlyBreakdowns.map(h => h.totalDemand) : []);
+
+    if (!showOnlyTotalDemandLine && hourlyBreakdowns) {
+        const drawArea = (data: number[], color: string, baseData: number[] | null = null) => {
+            ctx.beginPath();
+            const firstDataY = baseData ? baseData[0] + data[0] : data[0];
+            ctx.moveTo(padding, chartHeight - padding - (firstDataY * stepY));
+
+            for (let i = 0; i < numDataPoints; i++) {
+                const yValue = baseData ? baseData[i] + data[i] : data[i];
+                ctx.lineTo(padding + i * stepX, chartHeight - padding - (yValue * stepY));
+            }
+            
+            if (baseData) { 
+                for (let i = numDataPoints - 1; i >= 0; i--) {
+                     ctx.lineTo(padding + i * stepX, chartHeight - padding - (baseData[i] * stepY));
+                }
+            } else { 
+                ctx.lineTo(padding + (numDataPoints - 1) * stepX, chartHeight - padding);
+                ctx.lineTo(padding, chartHeight - padding);
+            }
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+        };
+
+        const reservedHourly = hourlyBreakdowns.map(h => h.reserved);
+        const fallbackHourly = hourlyBreakdowns.map(h => h.fallback);
+        const flexSpotHourly = hourlyBreakdowns.map(h => h.flexSpot);
+        const reservedAndFallbackHourly = reservedHourly.map((r, i) => r + fallbackHourly[i]);
+
+        drawArea(reservedHourly, CHART_COLORS.reserved);
+        drawArea(fallbackHourly, CHART_COLORS.fallback, reservedHourly);
+        drawArea(flexSpotHourly, CHART_COLORS.flexSpot, reservedAndFallbackHourly);
+    }
+    
+    // Draw total demand line on top
+    if (totalDemandHourlyData.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(padding, chartHeight - padding - (totalDemandHourlyData[0] * stepY));
+        totalDemandHourlyData.forEach((point, i) => {
+            ctx.lineTo(padding + i * stepX, chartHeight - padding - (point * stepY));
+        });
+        ctx.strokeStyle = CHART_COLORS.totalDemand;
+        ctx.lineWidth = 2.5; 
+        ctx.stroke();
+    }
+
+
+    // Legend
+    const legendItemsConfig = [
+        { label: 'Total Demand', color: CHART_COLORS.totalDemand, isLine: true },
+        { label: 'Reserved', color: CHART_COLORS.reserved },
+        { label: 'Fallback On-Demand', color: CHART_COLORS.fallback },
+        { label: 'Flex-start', color: CHART_COLORS.flexSpot },
+    ];
+    
+    const itemsToShowInLegend = showOnlyTotalDemandLine ? [legendItemsConfig[0]] : legendItemsConfig;
+
+    itemsToShowInLegend.forEach(item => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'legend-item';
+        
+        const colorBox = document.createElement('span');
+        colorBox.className = 'legend-color-box';
+        colorBox.style.backgroundColor = item.color;
+        if (item.isLine) { 
+            colorBox.style.height = '3px';
+            colorBox.style.width = '20px';
+             colorBox.style.border = 'none'; 
+        }
+        
+        itemDiv.appendChild(colorBox);
+        itemDiv.appendChild(document.createTextNode(item.label));
+        legendDiv.appendChild(itemDiv);
+    });
 }
+
+function handlePeakDemandCalculation(): void {
+    const form = document.getElementById('gpuForm') as HTMLFormElement;
+    if (!form) return;
+
+    const modelId = (form.elements.namedItem('llmModel') as HTMLSelectElement).value;
+    const peakConcurrentUsers = parseInt((form.elements.namedItem('peakConcurrentUsers') as HTMLInputElement).value, 10);
+    const avgRequestsPerUserPeakHour = parseInt((form.elements.namedItem('avgRequestsPerUserPeakHour') as HTMLInputElement).value, 10);
+    const avgTokensPerRequest = parseInt((form.elements.namedItem('avgTokensPerRequest') as HTMLInputElement).value, 10);
+    const selectedPatternId = (form.elements.namedItem('diurnalPatternSelect') as HTMLSelectElement).value;
+
+    const resultsDisplay = document.getElementById('resultsDisplay');
+    const analyzeButton = document.getElementById('analyzeCapacityCostsButton') as HTMLButtonElement;
+    const analysisDisplay = document.getElementById('analysisDisplay');
+    const chartPlaceholder = document.getElementById('chartPlaceholder');
+
+    if (!resultsDisplay || !analyzeButton || !analysisDisplay || !chartPlaceholder) return;
+
+    resultsDisplay.innerHTML = '<p>Calculating Peak Demand...</p>';
+    chartPlaceholder.textContent = 'Calculating Peak Demand...';
+    chartPlaceholder.style.display = 'block';
+    drawDiurnalChart(null, null, false); // Clear full chart
+    analysisDisplay.innerHTML = `<p class="placeholder-text">Configure capacity details and click 'Analyze Capacity & Costs'.</p>`; // Reset analysis
+
+
+    let errorMessages = [];
+    if (isNaN(peakConcurrentUsers) || peakConcurrentUsers <= 0) errorMessages.push("Peak Concurrent Users must be positive.");
+    if (isNaN(avgRequestsPerUserPeakHour) || avgRequestsPerUserPeakHour <= 0) errorMessages.push("Avg. Requests per User (peak hour) must be positive.");
+    if (isNaN(avgTokensPerRequest) || avgTokensPerRequest <= 0) errorMessages.push("Avg. Tokens per Request must be positive.");
+    
+    const selectedModelInfo = llmModels.find(m => m.id === modelId);
+    const activePattern = diurnalPatternsOptions.find(p => p.id === selectedPatternId);
+
+    if (!selectedModelInfo) errorMessages.push("Select a valid LLM model.");
+    if (!activePattern) errorMessages.push("Select a valid diurnal pattern.");
+
+    if (errorMessages.length > 0) {
+        displayResultsSummary(null, null, errorMessages.join(' '));
+        currentPeakEstimation = null;
+        peakDemandCalculatedSuccessfully = false;
+        analyzeButton.disabled = true;
+        return;
+    }
+
+    const initialNeeds = calculateInitialGPUNeeds(modelId, peakConcurrentUsers, avgRequestsPerUserPeakHour, avgTokensPerRequest, activePattern!.pattern);
+
+    if (initialNeeds) {
+        currentPeakEstimation = { ...initialNeeds, modelName: selectedModelInfo!.name };
+        peakDemandCalculatedSuccessfully = true;
+        displayResultsSummary(currentPeakEstimation.peakGpus, currentPeakEstimation.modelName);
+        drawDiurnalChart(null, currentPeakEstimation.peakGpus, true); // Show only total demand line
+        analyzeButton.disabled = false;
+        chartPlaceholder.textContent = "Now, configure capacity and click 'Analyze Capacity & Costs'."; // Update placeholder
+    } else {
+        displayResultsSummary(null, null, "Could not calculate peak GPU needs. Check inputs.");
+        currentPeakEstimation = null;
+        peakDemandCalculatedSuccessfully = false;
+        analyzeButton.disabled = true;
+    }
+}
+
+function handleCapacityCostAnalysis(): void {
+    const form = document.getElementById('gpuForm') as HTMLFormElement;
+    if (!form || !currentPeakEstimation) {
+        displayAnalysis(null, 0, null, null, "Calculate peak demand first.");
+        return;
+    }
+
+    let reservedGpus = parseInt((form.elements.namedItem('reservedGpus') as HTMLInputElement).value, 10);
+    const priceReserved = parseFloat((form.elements.namedItem('priceReserved') as HTMLInputElement).value);
+    const priceFallbackOnDemand = parseFloat((form.elements.namedItem('priceFallbackOnDemand') as HTMLInputElement).value);
+    const priceFlexSpot = parseFloat((form.elements.namedItem('priceFlexSpot') as HTMLInputElement).value);
+    
+    const analysisDisplay = document.getElementById('analysisDisplay');
+    if(!analysisDisplay) return;
+    analysisDisplay.innerHTML = '<p>Analyzing Capacity & Costs...</p>';
+    drawDiurnalChart(null, currentPeakEstimation.peakGpus, true); // Keep total demand line, indicate loading for bands
+
+
+    let errorMessages = [];
+    if (isNaN(reservedGpus) || reservedGpus < 0) errorMessages.push("Reserved H100 GPUs must be non-negative.");
+    if (reservedGpus > 512) {
+        (form.elements.namedItem('reservedGpus') as HTMLInputElement).value = '512';
+        reservedGpus = 512;
+    }
+    if (isNaN(priceReserved) || priceReserved < 0) errorMessages.push("Price for Reserved GPU must be non-negative.");
+    if (isNaN(priceFallbackOnDemand) || priceFallbackOnDemand < 0) errorMessages.push("Price for Fallback On-Demand GPU must be non-negative.");
+    if (isNaN(priceFlexSpot) || priceFlexSpot < 0) errorMessages.push("Price for Flex-start GPU must be non-negative.");
+
+    if (errorMessages.length > 0) {
+        displayAnalysis(null, 0, null, null, errorMessages.join(' '));
+        return;
+    }
+
+    const hourlyBreakdowns = calculateConsumptionBreakdown(currentPeakEstimation.hourlyGpuDemand, reservedGpus);
+    drawDiurnalChart(hourlyBreakdowns, currentPeakEstimation.peakGpus, false); // Show all bands
+    displayAnalysis(hourlyBreakdowns, reservedGpus, currentPeakEstimation.peakGpus, {
+        reserved: priceReserved,
+        fallback: priceFallbackOnDemand,
+        flexSpot: priceFlexSpot
+    });
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    populateModelDropdown();
+    populateDiurnalPatternDropdown();
+    
+    const form = document.getElementById('gpuForm') as HTMLFormElement;
+    const calculatePeakDemandButton = document.getElementById('calculatePeakDemandButton');
+    const analyzeCapacityCostsButton = document.getElementById('analyzeCapacityCostsButton');
+
+    if (form && calculatePeakDemandButton && analyzeCapacityCostsButton) {
+        (document.getElementById('peakConcurrentUsers') as HTMLInputElement).value = '100';
+        (document.getElementById('avgRequestsPerUserPeakHour') as HTMLInputElement).value = '10';
+        (document.getElementById('avgTokensPerRequest') as HTMLInputElement).value = '2000';
+        (document.getElementById('reservedGpus') as HTMLInputElement).value = String(DEFAULT_RESERVED_GPUS);
+        (document.getElementById('priceReserved') as HTMLInputElement).value = String(DEFAULT_PRICE_RESERVED.toFixed(2));
+        (document.getElementById('priceFallbackOnDemand') as HTMLInputElement).value = String(DEFAULT_PRICE_FALLBACK.toFixed(2));
+        (document.getElementById('priceFlexSpot') as HTMLInputElement).value = String(DEFAULT_PRICE_FLEXSPOT.toFixed(2));
+        
+        calculatePeakDemandButton.addEventListener('click', handlePeakDemandCalculation);
+        analyzeCapacityCostsButton.addEventListener('click', handleCapacityCostAnalysis);
+        
+        // Trigger initial peak demand calculation on load
+        handlePeakDemandCalculation();
+    } else {
+        console.error("Required form elements or buttons not found.");
+    }
+});

@@ -1,5 +1,5 @@
-
 {
-  "name": "Assured On-Demand Demo",
-  "description": "A demo UI showcasing Assured On-demand vs. Traditional Reservations for GPU capacity."
+  "name": "LLM GPU Estimator",
+  "description": "A tool to estimate H100 GPU requirements for serving open-source LLMs based on user traffic and display diurnal usage.",
+  "requestFramePermissions": []
 }

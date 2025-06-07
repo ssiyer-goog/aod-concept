@@ -1,5 +1,5 @@
 {
-  "name": "assured-on-demand-demo",
+  "name": "llm-gpu-estimator",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,8 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "19.0.0-rc.0",
-    "react-dom": "19.0.0-rc.0"
+
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

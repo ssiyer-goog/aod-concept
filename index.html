@@ -1,28 +1,120 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Assured On-Demand Demo</title>
-  <link rel="stylesheet" href="index.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <script type="module" src="index.tsx"></script>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@19.0.0-rc.0",
-    "react-dom/": "https://esm.sh/react-dom@19.0.0-rc.0/",
-    "react/": "https://esm.sh/react@19.0.0-rc.0/"
-  }
-}
-</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inference Capacity Planner</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script type="module" src="index.tsx"></script>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
-  <div id="root"></div>
+    <div class="container">
+        <header>
+            <h1>Inference Capacity Planner</h1>
+            <p>Estimate H100 GPU needs, explore reservation strategies, and analyze costs with fallback on-demand.</p>
+        </header>
+
+        <div class="estimation-summary-section card">
+            <h2>Estimation Summary</h2>
+            <div id="resultsDisplay" class="results-box" aria-live="polite">
+                <p>Configure workload details and click "Calculate Peak Demand".</p>
+            </div>
+        </div>
+
+        <form id="gpuForm">
+            <main class="main-content-grid">
+                <div class="left-column">
+                    <div class="configuration-section card">
+                        <h2>Configuration</h2>
+                        <div class="form-subsection" id="workloadConfigSection">
+                            <h3>Workload Details</h3>
+                            <div class="form-group">
+                                <label for="llmModel">Select LLM Model:</label>
+                                <select id="llmModel" name="llmModel" aria-label="Select LLM Model">
+                                    <!-- Options will be populated by JS -->
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="peakConcurrentUsers">Peak Concurrent Users:</label>
+                                <input type="number" id="peakConcurrentUsers" name="peakConcurrentUsers" value="100" min="1" required aria-required="true">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="avgRequestsPerUserPeakHour">Avg. Requests per User (peak hour):</label>
+                                <input type="number" id="avgRequestsPerUserPeakHour" name="avgRequestsPerUserPeakHour" value="10" min="1" required aria-required="true">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="avgTokensPerRequest">Avg. Tokens per Request (In+Out):</label>
+                                <input type="number" id="avgTokensPerRequest" name="avgTokensPerRequest" value="2000" min="1" required aria-required="true">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="diurnalPatternSelect">Select Traffic Pattern Shape:</label>
+                                <select id="diurnalPatternSelect" name="diurnalPatternSelect" aria-label="Select Diurnal Traffic Pattern Shape">
+                                    <!-- Options will be populated by JS -->
+                                </select>
+                            </div>
+                            <button type="button" id="calculatePeakDemandButton" class="cta-button primary-button calculate-button">Calculate Peak Demand</button>
+                        </div>
+
+                        <hr class="section-divider">
+
+                        <div class="form-subsection" id="capacityCostConfigSection">
+                            <h3>Capacity &amp; Cost Details</h3>
+                            <p class="config-step-info">Review the Estimation Summary above, then configure your capacity and costs.</p>
+                            <div class="form-group">
+                                <label for="reservedGpus">Reserved H100 GPUs (Max 512):</label>
+                                <input type="number" id="reservedGpus" name="reservedGpus" value="20" min="0" max="512" step="1" required aria-required="true">
+                            </div>
+                            <div class="form-group">
+                                <label for="priceReserved">Price/Hour - Reserved GPU ($):</label>
+                                <input type="number" id="priceReserved" name="priceReserved" value="2.50" min="0" step="0.01" required aria-required="true">
+                            </div>
+                            <div class="form-group">
+                                <label for="priceFallbackOnDemand">Price/Hour - Fallback On-Demand GPU ($):</label>
+                                <input type="number" id="priceFallbackOnDemand" name="priceFallbackOnDemand" value="3.00" min="0" step="0.01" required aria-required="true">
+                            </div>
+                            <div class="form-group">
+                                <label for="priceFlexSpot">Price/Hour - Flex-start GPU ($):</label>
+                                <input type="number" id="priceFlexSpot" name="priceFlexSpot" value="3.50" min="0" step="0.01" required aria-required="true">
+                            </div>
+                            <button type="button" id="analyzeCapacityCostsButton" class="cta-button primary-button calculate-button" disabled>Analyze Capacity & Costs</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="right-column">
+                    <div class="diurnal-pattern-section card">
+                        <h2>Diurnal GPU Usage Pattern (24 hours)</h2>
+                        <div class="chart-container">
+                            <canvas id="diurnalChart" width="600" height="300" aria-label="Diurnal GPU Usage Chart with consumption bands"></canvas>
+                             <div id="chartLegend" class="chart-legend"></div>
+                        </div>
+                         <p id="chartPlaceholder" class="placeholder-text">Chart will appear after calculations.</p>
+                    </div>
+
+                    <div class="cost-analysis-section card">
+                        <h2>Capacity & Cost Analysis (24h Period)</h2>
+                        <div id="analysisDisplay" class="analysis-box">
+                            <p class="placeholder-text">Analysis will appear after calculations.</p>
+                        </div>
+                    </div>
+                    
+                    <p class="disclaimer card">Note: This is an estimation. Actual GPU needs and costs may vary based on model optimizations, batching strategies, specific workload characteristics, infrastructure efficiency, and actual pricing agreements.</p>
+                </div>
+            </main>
+        </form>
+
+        <footer>
+            <p>&copy; 2024 Inference Capacity Planner</p>
+        </footer>
+    </div>
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>
